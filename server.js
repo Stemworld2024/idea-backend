@@ -108,30 +108,43 @@ app.get('/data', async (req, res) => {
     }
 });
 
-// Save/Update an idea
-app.post('/data', async (req, res) => {
+// Create a new idea
+app.post('/ideas', async (req, res) => {
     try {
-        const frontendData = req.body; // { openterra: [], stemworld: [], others: [] }
-
-        // This is a bulk overwrite to match the previous JSON behavior
-        // In a real app, we would update individual items, but for now we'll sync the database
-        await Idea.deleteMany({}); // Clear existing
-
-        const ideasToInsert = [];
-        for (const tab in frontendData) {
-            frontendData[tab].forEach(item => {
-                ideasToInsert.push({ ...item, tab });
-            });
-        }
-
-        if (ideasToInsert.length > 0) {
-            await Idea.insertMany(ideasToInsert);
-        }
-
-        res.json({ success: true });
+        const newIdea = new Idea(req.body);
+        await newIdea.save();
+        res.status(201).json(newIdea);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to sync data' });
+        res.status(500).json({ error: 'Failed to create idea' });
+    }
+});
+
+// Update an existing idea
+app.patch('/ideas/:id', async (req, res) => {
+    try {
+        const updatedIdea = await Idea.findByIdAndUpdate(
+            req.params.id,
+            { $set: req.body },
+            { new: true }
+        );
+        if (!updatedIdea) return res.status(404).json({ error: 'Idea not found' });
+        res.json(updatedIdea);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update idea' });
+    }
+});
+
+// Delete an idea
+app.delete('/ideas/:id', async (req, res) => {
+    try {
+        const deletedIdea = await Idea.findByIdAndDelete(req.params.id);
+        if (!deletedIdea) return res.status(404).json({ error: 'Idea not found' });
+        res.json({ success: true, message: 'Idea deleted successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to delete idea' });
     }
 });
 
