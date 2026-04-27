@@ -33,10 +33,33 @@ app.get("/", (req, res) => {
 
 
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+// MongoDB Connection with caching and listeners for stability
+const connectDB = async () => {
+    if (mongoose.connection.readyState >= 1) {
+        console.log("Using existing MongoDB connection");
+        return;
+    }
+    
+    try {
+        await mongoose.connect(process.env.MONGODB_URI, {
+            serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+            socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+        });
+        console.log("MongoDB Connected Successfully");
+    } catch (err) {
+        console.error("MongoDB Connection Error Details:", err);
+    }
+};
+
+// Listen for connection events to debug disconnections
+mongoose.connection.on('connected', () => console.log('Mongoose: Connected to MongoDB Atlas'));
+mongoose.connection.on('error', (err) => console.error('Mongoose: Connection error:', err));
+mongoose.connection.on('disconnected', () => {
+    console.warn('Mongoose: Connection lost. Attempting to reconnect...');
+});
+
+// Initial connection call
+connectDB();
 
 // Schemas
 const userSchema = new mongoose.Schema({
