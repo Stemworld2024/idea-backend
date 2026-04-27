@@ -188,7 +188,7 @@ app.get('/api/download/:filename', (req, res) => {
 });
 
 // Auth
-app.post('/api/signup', async (req, res) => {
+app.post('/signup', async (req, res) => {
     try {
         const { email, password, username } = req.body;
         if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -293,7 +293,7 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
