@@ -214,7 +214,11 @@ app.post('/signup', async (req, res) => {
 
         // Send Email
         try {
+            console.log("DEBUG: Preparing to send email to:", email);
+            console.log("DEBUG: EMAIL_USER is:", process.env.EMAIL_USER);
+            console.log("DEBUG: APP_URL is:", process.env.APP_URL);
             await sendVerificationEmail(email, verificationToken);
+            console.log("DEBUG: sendVerificationEmail finished successfully");
             res.json({ success: true, message: 'Signup successful! Please check your email to verify your account.' });
         } catch (mailErr) {
             console.error('Mail Error:', mailErr);
