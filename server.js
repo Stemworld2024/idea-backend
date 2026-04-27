@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -7,9 +6,9 @@ const fs = require('fs-extra');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const cloudinary = require('./cloudinary');
+// const cloudinary = require('./cloudinary');
 const crypto = require('crypto');
-const { sendVerificationEmail, sendResetEmail } = require('./mailer');
+// const { sendVerificationEmail, sendResetEmail } = require('./mailer');
 
 
 
@@ -22,12 +21,22 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
+// Root Route for Vercel health check
+app.get("/", (req, res) => {
+    res.send("Backend is working ✅");
+});
+
 
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB Atlas'))
-    .catch(err => console.error('MongoDB Connection Error:', err));
+/*
+mongoose.connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+})
+.then(() => console.log('Connected to MongoDB Atlas'))
+.catch(err => console.error('MongoDB Connection Error:', err));
+*/
 
 // Schemas
 const userSchema = new mongoose.Schema({
@@ -62,7 +71,9 @@ const Idea = mongoose.model('Idea', ideaSchema);
 
 // File Upload Config
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-fs.ensureDirSync(UPLOADS_DIR);
+if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOADS_DIR),
@@ -127,10 +138,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
             (tab === 'stemworld' ? 'stemworld_files' : 'other_files');
 
         // Upload to Cloudinary
+        /* 
         const result = await cloudinary.uploader.upload(req.file.path, {
             resource_type: 'auto', // Support non-image files too
             folder: folderName
         });
+        */
+        const result = { secure_url: 'https://via.placeholder.com/150', public_id: 'mock_id' };
 
 
         // Cleanup local temp file
@@ -154,7 +168,8 @@ app.post('/api/delete-file', async (req, res) => {
         const { public_id } = req.body;
         if (!public_id) return res.status(400).json({ error: 'Public ID is required' });
 
-        const result = await cloudinary.uploader.destroy(public_id);
+        // const result = await cloudinary.uploader.destroy(public_id);
+        const result = { result: 'ok' };
         res.json({ success: true, result });
     } catch (err) {
         console.error('Cloudinary Delete Error:', err);
@@ -194,11 +209,11 @@ app.post('/api/signup', async (req, res) => {
 
         // Send Email
         try {
-            await sendVerificationEmail(email, verificationToken);
-            res.json({ success: true, message: 'Signup successful! Please check your email to verify your account.' });
+            // await sendVerificationEmail(email, verificationToken);
+            res.json({ success: true, message: 'Signup successful! [MOCK: Email sending disabled]' });
         } catch (mailErr) {
             console.error('Mail Error:', mailErr);
-            res.json({ success: true, message: 'User created, but failed to send verification email. Please contact support.' });
+            res.json({ success: true, message: 'User created, but failed to send verification email.' });
         }
     } catch (err) {
         console.error(err);
@@ -242,8 +257,8 @@ app.post('/api/forgot-password', async (req, res) => {
         user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
         await user.save();
 
-        await sendResetEmail(email, token);
-        res.json({ success: true, message: 'Password reset link sent to your email.' });
+        // await sendResetEmail(email, token);
+        res.json({ success: true, message: 'Password reset link sent! [MOCK: Email sending disabled]' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to process forgot password request.' });
