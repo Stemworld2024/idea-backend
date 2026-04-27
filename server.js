@@ -192,9 +192,13 @@ app.get('/download/:filename', (req, res) => {
 
 // Auth
 app.post('/signup', async (req, res) => {
+    console.log("Signup attempt received:", req.body);
     try {
         const { email, password, username } = req.body;
-        if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+        if (!email || !password) {
+            console.log("Signup failed: Email or password missing");
+            return res.status(400).json({ error: 'Email and password required' });
+        }
 
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ error: 'User already exists' });
@@ -210,6 +214,7 @@ app.post('/signup', async (req, res) => {
             isVerified: true
         });
         await newUser.save();
+        console.log("SUCCESS: User saved to MongoDB with ID:", newUser._id);
 
 
         // Send Email
@@ -225,8 +230,8 @@ app.post('/signup', async (req, res) => {
             res.json({ success: true, message: 'User created, but failed to send verification email.' });
         }
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Signup failed' });
+        console.error("Signup Error:", err);
+        res.status(500).json({ error: 'Signup failed', details: err.message });
     }
 });
 
@@ -301,11 +306,13 @@ app.post('/reset-password', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
+    console.log("Login attempt received:", req.body ? { ...req.body, password: '***' } : "NO BODY");
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
 
         if (!user || !(await bcrypt.compare(password, user.password))) {
+            console.log("Login failed: Invalid credentials for", email);
             return res.status(401).json({ error: 'Invalid email or password' });
         }
 
