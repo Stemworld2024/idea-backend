@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendVerificationEmail = async (email, token) => {
-    const verificationUrl = `${process.env.APP_URL}/api/verify-email/${token}`;
+    const verificationUrl = `${process.env.APP_URL}/verify-email/${token}`;
     
     const mailOptions = {
         from: `"Idea Dashboard" <${process.env.EMAIL_USER}>`,
@@ -29,7 +29,15 @@ const sendVerificationEmail = async (email, token) => {
         `
     };
 
-    return transporter.sendMail(mailOptions);
+    console.log(`Attempting to send verification email to: ${email}`);
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email sent successfully:', info.response);
+        return info;
+    } catch (error) {
+        console.error('Nodemailer Error:', error);
+        throw error;
+    }
 };
 
 const sendResetEmail = async (email, token) => {
@@ -53,7 +61,15 @@ const sendResetEmail = async (email, token) => {
         `
     };
 
-    return transporter.sendMail(mailOptions);
+    console.log(`Attempting to send reset email to: ${email}`);
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Reset email sent successfully:', info.response);
+        return info;
+    } catch (error) {
+        console.error('Nodemailer Error (Reset):', error);
+        throw error;
+    }
 };
 
 module.exports = { sendVerificationEmail, sendResetEmail };

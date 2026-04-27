@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 // const cloudinary = require('./cloudinary');
 const crypto = require('crypto');
-// const { sendVerificationEmail, sendResetEmail } = require('./mailer');
+const { sendVerificationEmail, sendResetEmail } = require('./mailer');
 
 
 
@@ -89,7 +89,7 @@ const upload = multer({ storage: storage });
 // API Endpoints
 
 // Get all data
-app.get('/api/data', async (req, res) => {
+app.get('/data', async (req, res) => {
     try {
         const ideas = await Idea.find();
         // Transform array into the tabbed object structure the frontend expects
@@ -105,8 +105,8 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
-// Save/Update an idea (New endpoint for granular updates if needed, but keeping bulk post for compatibility)
-app.post('/api/data', async (req, res) => {
+// Save/Update an idea
+app.post('/data', async (req, res) => {
     try {
         const frontendData = req.body; // { openterra: [], stemworld: [], others: [] }
 
@@ -133,7 +133,7 @@ app.post('/api/data', async (req, res) => {
 });
 
 // Upload file to Cloudinary
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/upload', upload.single('file'), async (req, res) => {
     try {
         const { tab } = req.body;
         const folderName = tab === 'openterra' ? 'openterra_files' :
@@ -165,7 +165,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 });
 
 // Delete file from Cloudinary
-app.post('/api/delete-file', async (req, res) => {
+app.post('/delete-file', async (req, res) => {
     try {
         const { public_id } = req.body;
         if (!public_id) return res.status(400).json({ error: 'Public ID is required' });
@@ -181,7 +181,7 @@ app.post('/api/delete-file', async (req, res) => {
 
 
 // Download file
-app.get('/api/download/:filename', (req, res) => {
+app.get('/download/:filename', (req, res) => {
     const filePath = path.join(UPLOADS_DIR, req.params.filename);
     if (fs.existsSync(filePath)) res.download(filePath);
     else res.status(404).json({ error: 'File not found' });
@@ -211,8 +211,8 @@ app.post('/signup', async (req, res) => {
 
         // Send Email
         try {
-            // await sendVerificationEmail(email, verificationToken);
-            res.json({ success: true, message: 'Signup successful! [MOCK: Email sending disabled]' });
+            await sendVerificationEmail(email, verificationToken);
+            res.json({ success: true, message: 'Signup successful! Please check your email to verify your account.' });
         } catch (mailErr) {
             console.error('Mail Error:', mailErr);
             res.json({ success: true, message: 'User created, but failed to send verification email.' });
@@ -224,7 +224,7 @@ app.post('/signup', async (req, res) => {
 });
 
 // Verify Email
-app.get('/api/verify-email/:token', async (req, res) => {
+app.get('/verify-email/:token', async (req, res) => {
     try {
         const { token } = req.params;
         const user = await User.findOne({ verificationToken: token });
@@ -245,7 +245,7 @@ app.get('/api/verify-email/:token', async (req, res) => {
 });
 
 // Forgot Password
-app.post('/api/forgot-password', async (req, res) => {
+app.post('/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
         const user = await User.findOne({ email });
@@ -259,8 +259,8 @@ app.post('/api/forgot-password', async (req, res) => {
         user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
         await user.save();
 
-        // await sendResetEmail(email, token);
-        res.json({ success: true, message: 'Password reset link sent! [MOCK: Email sending disabled]' });
+        await sendResetEmail(email, token);
+        res.json({ success: true, message: 'Password reset link sent to your email.' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to process forgot password request.' });
@@ -268,7 +268,7 @@ app.post('/api/forgot-password', async (req, res) => {
 });
 
 // Reset Password
-app.post('/api/reset-password', async (req, res) => {
+app.post('/reset-password', async (req, res) => {
     try {
         const { token, password } = req.body;
         const user = await User.findOne({
