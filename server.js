@@ -29,14 +29,12 @@ app.get("/", (req, res) => {
 
 
 // MongoDB Connection
-/*
 mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
 })
-.then(() => console.log('Connected to MongoDB Atlas'))
-.catch(err => console.error('MongoDB Connection Error:', err));
-*/
+.then(() => console.log("MongoDB Connected"))
+.catch(err => console.log("MongoDB Connection Error:", err));
 
 // Schemas
 const userSchema = new mongoose.Schema({
