@@ -207,7 +207,7 @@ app.post('/signup', async (req, res) => {
             password: hashedPassword,
             username: username,
             verificationToken: verificationToken,
-            isVerified: false
+            isVerified: true
         });
         await newUser.save();
 
