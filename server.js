@@ -29,12 +29,9 @@ app.get("/", (req, res) => {
 
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log("MongoDB Connected"))
-.catch(err => console.log("MongoDB Connection Error:", err));
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log("MongoDB Connected"))
+  .catch(err => console.log(err));
 
 // Schemas
 const userSchema = new mongoose.Schema({
@@ -151,7 +148,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
 
         // Cleanup local temp file
-        await fs.remove(req.file.path);
+        // await fs.remove(req.file.path);
 
         res.json({
             success: true,
