@@ -66,8 +66,8 @@ const ideaSchema = new mongoose.Schema({
 });
 
 
-const User = mongoose.model('User', userSchema);
-const Idea = mongoose.model('Idea', ideaSchema);
+const User = mongoose.models.User || mongoose.model('User', userSchema);
+const Idea = mongoose.models.Idea || mongoose.model('Idea', ideaSchema);
 
 // File Upload Config
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
