@@ -1,6 +1,5 @@
-if (process.env.NODE_ENV !== 'production') {
-    require('dotenv').config();
-}
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -9,7 +8,7 @@ const fs = require('fs-extra');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-// const cloudinary = require('./cloudinary');
+const cloudinary = require('./cloudinary');
 const crypto = require('crypto');
 const { sendVerificationEmail, sendResetEmail } = require('./mailer');
 
@@ -26,7 +25,18 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// Root Route for Vercel health check
+// Request Logger
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`${new Date().toISOString()} - ${req.method} ${req.url} ${res.statusCode} (${duration}ms)`);
+    });
+    next();
+});
+
+
+// Root Route for health check
 app.get("/", (req, res) => {
     res.send("Backend is working ✅");
 });
@@ -39,21 +49,24 @@ const connectDB = async () => {
         console.log("Using existing MongoDB connection");
         return;
     }
-    
+
     try {
+        if (!process.env.MONGODB_URI) {
+            throw new Error("MONGODB_URI is not defined in .env file");
+        }
         await mongoose.connect(process.env.MONGODB_URI, {
-            serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-            socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
         });
         console.log("MongoDB Connected Successfully");
     } catch (err) {
-        console.error("MongoDB Connection Error Details:", err);
+        console.error("MongoDB Connection Error Details:", err.message);
     }
 };
 
 // Listen for connection events to debug disconnections
 mongoose.connection.on('connected', () => console.log('Mongoose: Connected to MongoDB Atlas'));
-mongoose.connection.on('error', (err) => console.error('Mongoose: Connection error:', err));
+mongoose.connection.on('error', (err) => console.error('Mongoose: Connection error:', err.message));
 mongoose.connection.on('disconnected', () => {
     console.warn('Mongoose: Connection lost. Attempting to reconnect...');
 });
@@ -93,31 +106,31 @@ const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Idea = mongoose.models.Idea || mongoose.model('Idea', ideaSchema);
 
 // File Upload Config
-// const UPLOADS_DIR = path.join(__dirname, 'uploads');
-/*
-if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-*/
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
 
+// Use memory storage to avoid writing temporary files to disk
+// This prevents Live Server from refreshing the page when a file is uploaded
 const storage = multer.memoryStorage();
-/*
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + file.originalname);
-    }
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
-*/
-const upload = multer({ storage: storage });
 
 // API Endpoints
 
 // Get all data
 app.get('/data', async (req, res) => {
+    console.log("Fetching all data from MongoDB...");
     try {
-        const ideas = await Idea.find();
+        // Ensure connection is ready or wait for it
+        if (mongoose.connection.readyState !== 1) {
+            console.log("MongoDB not ready, attempting to connect...");
+            await connectDB();
+        }
+
+        const ideas = await Idea.find().lean();
+        console.log(`Successfully fetched ${ideas.length} ideas.`);
+
         // Transform array into the tabbed object structure the frontend expects
         const structuredData = {
             openterra: ideas.filter(i => i.tab === 'openterra'),
@@ -126,14 +139,21 @@ app.get('/data', async (req, res) => {
         };
         res.json(structuredData);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch data' });
+        console.error("CRITICAL ERROR in /data:", err);
+        res.status(500).json({
+            error: 'Failed to fetch data',
+            details: err.message,
+            readyState: mongoose.connection.readyState
+        });
     }
 });
+
 
 // Create a new idea
 app.post('/ideas', async (req, res) => {
     try {
+        console.log('--- [POST] /ideas ---');
+        console.log('Data:', req.body);
         const newIdea = new Idea(req.body);
         await newIdea.save();
         res.status(201).json(newIdea);
@@ -146,15 +166,17 @@ app.post('/ideas', async (req, res) => {
 // Update an existing idea
 app.patch('/ideas/:id', async (req, res) => {
     try {
+        console.log(`--- [PATCH] /ideas/${req.params.id} ---`);
+        console.log('Update:', req.body);
         const updatedIdea = await Idea.findByIdAndUpdate(
             req.params.id,
             { $set: req.body },
-            { new: true }
+            { returnDocument: 'after' }
         );
         if (!updatedIdea) return res.status(404).json({ error: 'Idea not found' });
         res.json(updatedIdea);
     } catch (err) {
-        console.error(err);
+        console.error('Patch Error:', err);
         res.status(500).json({ error: 'Failed to update idea' });
     }
 });
@@ -162,11 +184,29 @@ app.patch('/ideas/:id', async (req, res) => {
 // Delete an idea
 app.delete('/ideas/:id', async (req, res) => {
     try {
+        console.log(`--- [DELETE] /ideas/${req.params.id} ---`);
         const deletedIdea = await Idea.findByIdAndDelete(req.params.id);
+        
         if (!deletedIdea) return res.status(404).json({ error: 'Idea not found' });
+
+        // Also delete associated file from Cloudinary if it exists
+        if (deletedIdea.cloudinaryId) {
+            console.log('Deleting associated file from Cloudinary:', deletedIdea.cloudinaryId);
+            try {
+                // Try as image then raw
+                let cloudRes = await cloudinary.uploader.destroy(deletedIdea.cloudinaryId, { resource_type: 'image' });
+                if (cloudRes.result !== 'ok') {
+                    await cloudinary.uploader.destroy(deletedIdea.cloudinaryId, { resource_type: 'raw' });
+                }
+            } catch (cloudErr) {
+                console.error('Failed to delete associated Cloudinary file:', cloudErr);
+                // We don't fail the whole request if Cloudinary delete fails
+            }
+        }
+
         res.json({ success: true, message: 'Idea deleted successfully' });
     } catch (err) {
-        console.error(err);
+        console.error('Delete Error:', err);
         res.status(500).json({ error: 'Failed to delete idea' });
     }
 });
@@ -174,22 +214,36 @@ app.delete('/ideas/:id', async (req, res) => {
 // Upload file to Cloudinary
 app.post('/upload', upload.single('file'), async (req, res) => {
     try {
+        console.log('--- [POST] /upload (Memory) ---');
+        if (!req.file) {
+            console.error('No file received');
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
         const { tab } = req.body;
+        console.log(`Processing: ${req.file.originalname} (${req.file.size} bytes) for tab: ${tab || 'default'}`);
+
         const folderName = tab === 'openterra' ? 'openterra_files' :
             (tab === 'stemworld' ? 'stemworld_files' : 'other_files');
 
-        // Upload to Cloudinary
-        /* 
-        const result = await cloudinary.uploader.upload(req.file.path, {
-            resource_type: 'auto', // Support non-image files too
-            folder: folderName
-        });
-        */
-        const result = { secure_url: 'https://via.placeholder.com/150', public_id: 'mock_id' };
+        const uploadFromBuffer = (buffer) => {
+            return new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    {
+                        resource_type: 'auto',
+                        folder: folderName
+                    },
+                    (error, result) => {
+                        if (result) resolve(result);
+                        else reject(error);
+                    }
+                );
+                stream.end(buffer);
+            });
+        };
 
-
-        // Cleanup local temp file
-        // await fs.remove(req.file.path);
+        const result = await uploadFromBuffer(req.file.buffer);
+        console.log('Cloudinary Success:', result.secure_url);
 
         res.json({
             success: true,
@@ -198,8 +252,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             originalName: req.file.originalname
         });
     } catch (err) {
-        console.error('Cloudinary Upload Error:', err);
-        res.status(500).json({ error: 'Upload to Cloudinary failed' });
+        console.error('Cloudinary Error:', err);
+        res.status(500).json({ error: 'Upload failed', details: err.message });
     }
 });
 
@@ -209,12 +263,22 @@ app.post('/delete-file', async (req, res) => {
         const { public_id } = req.body;
         if (!public_id) return res.status(400).json({ error: 'Public ID is required' });
 
-        // const result = await cloudinary.uploader.destroy(public_id);
-        const result = { result: 'ok' };
+        console.log(`--- [POST] /delete-file ---`);
+        console.log('Public ID:', public_id);
+
+        // We try to delete as image first, then raw (for docs)
+        let result = await cloudinary.uploader.destroy(public_id, { resource_type: 'image' });
+        
+        if (result.result !== 'ok') {
+            console.log('Not found as image, trying as raw...');
+            result = await cloudinary.uploader.destroy(public_id, { resource_type: 'raw' });
+        }
+
+        console.log('Cloudinary Delete Result:', result);
         res.json({ success: true, result });
     } catch (err) {
         console.error('Cloudinary Delete Error:', err);
-        res.status(500).json({ error: 'Delete from Cloudinary failed' });
+        res.status(500).json({ error: 'Delete from Cloudinary failed', details: err.message });
     }
 });
 
@@ -372,4 +436,23 @@ app.post('/login', async (req, res) => {
 
 
 
+
+// Error Handling
+app.use((err, req, res, next) => {
+    console.error('!!! SERVER ERROR:', err);
+    if (res.headersSent) {
+        return next(err);
+    }
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
+
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}
+
 module.exports = app;
+

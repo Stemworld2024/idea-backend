@@ -24,7 +24,7 @@ transporter.verify(function (error, success) {
 
 const sendVerificationEmail = async (email, token) => {
     const verificationUrl = `${process.env.APP_URL}/verify-email/${token}`;
-    
+
     const mailOptions = {
         from: `"Idea Dashboard" <${process.env.EMAIL_USER}>`,
         to: email,
@@ -56,7 +56,7 @@ const sendVerificationEmail = async (email, token) => {
 
 const sendResetEmail = async (email, token) => {
     const resetUrl = `${process.env.APP_URL}/auth.html?resetToken=${token}`;
-    
+
     const mailOptions = {
         from: `"Idea Dashboard" <${process.env.EMAIL_USER}>`,
         to: email,
