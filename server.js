@@ -8,7 +8,7 @@ const fs = require('fs-extra');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const cloudinary = require('./cloudinary');
+
 const crypto = require('crypto');
 const { sendVerificationEmail, sendResetEmail } = require('./mailer');
 
@@ -41,6 +41,74 @@ app.get("/", (req, res) => {
     res.send("Backend is working ✅");
 });
 
+// ============================================================
+// PROXY VIEW ENDPOINT - Fetches file from Cloudinary and serves
+// it with correct headers so the browser DISPLAYS it inline.
+// Uses built-in https module (no external dependencies).
+// ============================================================
+app.get("/api/proxy-view", (req, res) => {
+    const fileUrl = req.query.url;
+    const fileName = req.query.name || 'document';
+
+    if (!fileUrl) {
+        return res.status(400).send("Missing 'url' query parameter");
+    }
+
+    // Determine MIME type from filename extension
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xls': 'application/vnd.ms-excel',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.ppt': 'application/vnd.ms-powerpoint',
+        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+        '.txt': 'text/plain',
+        '.csv': 'text/csv',
+        '.rtf': 'application/rtf',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    // Use built-in https module to fetch from Cloudinary
+    const https = require('https');
+    https.get(fileUrl, (proxyRes) => {
+        // Follow redirects
+        if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+            https.get(proxyRes.headers.location, (redirectRes) => {
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+                res.setHeader('Cache-Control', 'public, max-age=3600');
+                redirectRes.pipe(res);
+            }).on('error', (err) => {
+                console.error("Proxy redirect error:", err);
+                res.status(500).send("Error loading file");
+            });
+            return;
+        }
+
+        if (proxyRes.statusCode !== 200) {
+            return res.status(proxyRes.statusCode).send("Failed to fetch file from storage");
+        }
+
+        // Set headers to force INLINE viewing (not download)
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+
+        // Pipe the file data directly to the browser
+        proxyRes.pipe(res);
+    }).on('error', (err) => {
+        console.error("Proxy view error:", err);
+        res.status(500).send("Error loading file for viewing");
+    });
+});
 
 
 // MongoDB Connection with caching and listeners for stability
@@ -93,7 +161,6 @@ const ideaSchema = new mongoose.Schema({
     description: String,
     fileName: String,
     fileData: String,
-    cloudinaryId: String,
     owner: String,
     status: String,
     comment: String,
@@ -189,20 +256,7 @@ app.delete('/ideas/:id', async (req, res) => {
         
         if (!deletedIdea) return res.status(404).json({ error: 'Idea not found' });
 
-        // Also delete associated file from Cloudinary if it exists
-        if (deletedIdea.cloudinaryId) {
-            console.log('Deleting associated file from Cloudinary:', deletedIdea.cloudinaryId);
-            try {
-                // Try as image then raw
-                let cloudRes = await cloudinary.uploader.destroy(deletedIdea.cloudinaryId, { resource_type: 'image' });
-                if (cloudRes.result !== 'ok') {
-                    await cloudinary.uploader.destroy(deletedIdea.cloudinaryId, { resource_type: 'raw' });
-                }
-            } catch (cloudErr) {
-                console.error('Failed to delete associated Cloudinary file:', cloudErr);
-                // We don't fail the whole request if Cloudinary delete fails
-            }
-        }
+
 
         res.json({ success: true, message: 'Idea deleted successfully' });
     } catch (err) {
@@ -211,82 +265,20 @@ app.delete('/ideas/:id', async (req, res) => {
     }
 });
 
-// Upload file to Cloudinary
-app.post('/upload', upload.single('file'), async (req, res) => {
-    try {
-        console.log('--- [POST] /upload (Memory) ---');
-        if (!req.file) {
-            console.error('No file received');
-            return res.status(400).json({ error: 'No file uploaded' });
-        }
-
-        const { tab } = req.body;
-        console.log(`Processing: ${req.file.originalname} (${req.file.size} bytes) for tab: ${tab || 'default'}`);
-
-        const folderName = tab === 'openterra' ? 'openterra_files' :
-            (tab === 'stemworld' ? 'stemworld_files' : 'other_files');
-
-        const uploadFromBuffer = (buffer) => {
-            return new Promise((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream(
-                    {
-                        resource_type: 'auto',
-                        folder: folderName
-                    },
-                    (error, result) => {
-                        if (result) resolve(result);
-                        else reject(error);
-                    }
-                );
-                stream.end(buffer);
-            });
-        };
-
-        const result = await uploadFromBuffer(req.file.buffer);
-        console.log('Cloudinary Success:', result.secure_url);
-
-        res.json({
-            success: true,
-            url: result.secure_url,
-            public_id: result.public_id,
-            originalName: req.file.originalname
-        });
-    } catch (err) {
-        console.error('Cloudinary Error:', err);
-        res.status(500).json({ error: 'Upload failed', details: err.message });
-    }
-});
-
-// Delete file from Cloudinary
-app.post('/delete-file', async (req, res) => {
-    try {
-        const { public_id } = req.body;
-        if (!public_id) return res.status(400).json({ error: 'Public ID is required' });
-
-        console.log(`--- [POST] /delete-file ---`);
-        console.log('Public ID:', public_id);
-
-        // We try to delete as image first, then raw (for docs)
-        let result = await cloudinary.uploader.destroy(public_id, { resource_type: 'image' });
-        
-        if (result.result !== 'ok') {
-            console.log('Not found as image, trying as raw...');
-            result = await cloudinary.uploader.destroy(public_id, { resource_type: 'raw' });
-        }
-
-        console.log('Cloudinary Delete Result:', result);
-        res.json({ success: true, result });
-    } catch (err) {
-        console.error('Cloudinary Delete Error:', err);
-        res.status(500).json({ error: 'Delete from Cloudinary failed', details: err.message });
-    }
-});
 
 
-// Download file
+
+// Download file (Forces download)
 app.get('/download/:filename', (req, res) => {
     const filePath = path.join(UPLOADS_DIR, req.params.filename);
     if (fs.existsSync(filePath)) res.download(filePath);
+    else res.status(404).json({ error: 'File not found' });
+});
+
+// View file (Allows browser to render if supported)
+app.get('/view/:filename', (req, res) => {
+    const filePath = path.join(UPLOADS_DIR, req.params.filename);
+    if (fs.existsSync(filePath)) res.sendFile(filePath);
     else res.status(404).json({ error: 'File not found' });
 });
 
@@ -311,7 +303,7 @@ app.post('/signup', async (req, res) => {
             password: hashedPassword,
             username: username,
             verificationToken: verificationToken,
-            isVerified: true
+            isVerified: false // Users must verify first
         });
         await newUser.save();
         console.log("SUCCESS: User saved to MongoDB with ID:", newUser._id);

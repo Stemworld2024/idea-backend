@@ -23,7 +23,9 @@ transporter.verify(function (error, success) {
 });
 
 const sendVerificationEmail = async (email, token) => {
-    const verificationUrl = `${process.env.APP_URL}/verify-email/${token}`;
+    // Use BACKEND_URL for the direct link to the server
+    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
+    const verificationUrl = `${backendUrl}/verify-email/${token}`;
 
     const mailOptions = {
         from: `"Idea Dashboard" <${process.env.EMAIL_USER}>`,
