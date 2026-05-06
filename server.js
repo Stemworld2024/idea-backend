@@ -178,7 +178,7 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 // Use memory storage to avoid writing temporary files to disk
 // This prevents Live Server from refreshing the page when a file is uploaded
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
@@ -253,7 +253,7 @@ app.delete('/ideas/:id', async (req, res) => {
     try {
         console.log(`--- [DELETE] /ideas/${req.params.id} ---`);
         const deletedIdea = await Idea.findByIdAndDelete(req.params.id);
-        
+
         if (!deletedIdea) return res.status(404).json({ error: 'Idea not found' });
 
 

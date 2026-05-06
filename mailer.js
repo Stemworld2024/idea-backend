@@ -5,10 +5,10 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const sendVerificationEmail = async (email, token) => {
     try {
         const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
-        const verificationUrl = `${backendUrl}/verify-email/${token}`;
+        const verificationUrl = `${backendUrl}/verify/${token}`;
 
         const { data, error } = await resend.emails.send({
-            from: 'onboarding@resend.dev', // Use your verified domain in production
+            from: 'StemWorld <onboarding@resend.dev>', 
             to: email,
             subject: 'Verify Your Email Address',
             html: `
