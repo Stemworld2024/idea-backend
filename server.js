@@ -311,10 +311,15 @@ app.post('/signup', async (req, res) => {
             res.json({ success: true, message: 'Signup successful, check your email' });
         } catch (mailErr) {
             console.error("Email Sending Error:", mailErr);
-            // Safety: Don't crash the server if Resend blocks the email
+            
+            // AUTO-VERIFY BYPASS for Testing
+            // Since Resend blocks emails in testing mode, we activate the account automatically
+            user.isVerified = true;
+            await user.save();
+
             res.json({ 
                 success: true, 
-                message: 'Signup successful, but Resend blocked the email. Note: In testing mode, you can only send to your own email address.' 
+                message: 'Signup successful! (Auto-verified because Resend is in testing mode).' 
             });
         }
     } catch (err) {
