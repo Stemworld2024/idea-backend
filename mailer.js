@@ -5,17 +5,20 @@ console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "EXISTS" : "MISSING");
 
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // Use STARTTLS
+    port: 465,
+    secure: true, // Use SSL
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
     },
-    logger: true,
-    debug: true,
-    connectionTimeout: 20000, // 20 seconds
-    greetingTimeout: 20000,
-    socketTimeout: 20000
+    tls: {
+        // This helps bypass some Render network quirks
+        servername: 'smtp.gmail.com',
+        rejectUnauthorized: false
+    },
+    connectionTimeout: 10000, 
+    greetingTimeout: 10000,
+    socketTimeout: 10000
 });
 
 // Verify connection configuration
