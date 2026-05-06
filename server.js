@@ -288,7 +288,6 @@ app.post('/signup', async (req, res) => {
     try {
         const { email, password, username } = req.body;
         if (!email || !password) {
-            console.log("Signup failed: Email or password missing");
             return res.status(400).json({ error: 'Email and password required' });
         }
 
@@ -296,31 +295,19 @@ app.post('/signup', async (req, res) => {
         if (existingUser) return res.status(400).json({ error: 'User already exists' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const verificationToken = crypto.randomBytes(32).toString('hex');
 
-        const newUser = new User({
+        // Create user
+        const user = await User.create({
             email,
             password: hashedPassword,
-            username: username,
-            verificationToken: verificationToken,
-            isVerified: false // Users must verify first
+            username,
+            isVerified: false
         });
-        await newUser.save();
-        console.log("SUCCESS: User saved to MongoDB with ID:", newUser._id);
 
+        const token = user._id; // Using User ID as the verification token
+        await sendVerificationEmail(email, token);
 
-        // Send Email
-        try {
-            console.log("DEBUG: Preparing to send email to:", email);
-            console.log("DEBUG: EMAIL_USER is:", process.env.EMAIL_USER);
-            console.log("DEBUG: APP_URL is:", process.env.APP_URL);
-            await sendVerificationEmail(email, verificationToken);
-            console.log("DEBUG: sendVerificationEmail finished successfully");
-            res.json({ success: true, message: 'Signup successful! Please check your email to verify your account.' });
-        } catch (mailErr) {
-            console.error('Mail Error:', mailErr);
-            res.json({ success: true, message: 'User created, but failed to send verification email.' });
-        }
+        res.json({ success: true, message: 'Signup successful, check your email' });
     } catch (err) {
         console.error("Signup Error:", err);
         res.status(500).json({ error: 'Signup failed', details: err.message });
@@ -331,14 +318,14 @@ app.post('/signup', async (req, res) => {
 app.get('/verify-email/:token', async (req, res) => {
     try {
         const { token } = req.params;
-        const user = await User.findOne({ verificationToken: token });
+        // Token is now the user ID
+        const user = await User.findById(token);
 
         if (!user) {
             return res.redirect(`${process.env.APP_URL}/auth.html?error=Invalid or expired token`);
         }
 
         user.isVerified = true;
-        user.verificationToken = undefined;
         await user.save();
 
         res.redirect(`${process.env.APP_URL}/auth.html?verified=true`);
