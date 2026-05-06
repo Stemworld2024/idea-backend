@@ -305,9 +305,18 @@ app.post('/signup', async (req, res) => {
         });
 
         const token = user._id; // Using User ID as the verification token
-        await sendVerificationEmail(email, token);
-
-        res.json({ success: true, message: 'Signup successful, check your email' });
+        
+        try {
+            await sendVerificationEmail(email, token);
+            res.json({ success: true, message: 'Signup successful, check your email' });
+        } catch (mailErr) {
+            console.error("Email Sending Error:", mailErr);
+            // Safety: Don't crash the server if Resend blocks the email
+            res.json({ 
+                success: true, 
+                message: 'Signup successful, but Resend blocked the email. Note: In testing mode, you can only send to your own email address.' 
+            });
+        }
     } catch (err) {
         console.error("Signup Error:", err);
         res.status(500).json({ error: 'Signup failed', details: err.message });
@@ -315,7 +324,7 @@ app.post('/signup', async (req, res) => {
 });
 
 // Verify Email
-app.get('/verify-email/:token', async (req, res) => {
+app.get('/verify/:token', async (req, res) => {
     try {
         const { token } = req.params;
         // Token is now the user ID
