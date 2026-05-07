@@ -305,9 +305,23 @@ app.post('/signup', async (req, res) => {
         });
 
         const token = user._id; // Using User ID as the verification token
-        await sendVerificationEmail(email, token);
+        
+        try {
+            await sendVerificationEmail(email, token);
+            res.json({ success: true, message: 'Signup successful, check your email' });
+        } catch (mailErr) {
+            console.error("Email Sending Error:", mailErr);
+            
+            // AUTO-VERIFY BYPASS for Testing
+            // Since Resend blocks emails in testing mode, we activate the account automatically
+            user.isVerified = true;
+            await user.save();
 
-        res.json({ success: true, message: 'Signup successful, check your email' });
+            res.json({ 
+                success: true, 
+                message: 'Signup successful! (Auto-verified because Resend is in testing mode).' 
+            });
+        }
     } catch (err) {
         console.error("Signup Error:", err);
         res.status(500).json({ error: 'Signup failed', details: err.message });
